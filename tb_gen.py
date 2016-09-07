@@ -12,9 +12,14 @@ class design:
         self.url = sys.argv[1]
         print("u have ordered a testbench for : "+self.url)
         self.entity = self.get_entity()
-        self.signals = self.get_signals()
+        #self.design = "rtl";
+        self.design_tb = "simulate";
+        self.signals  = self.get_signals()
+        self.generics = self.get_generics()
         for signal in self.signals :
             signal[2] = signal[2].replace(";","")
+        for generic in self.generics :
+            generic[2] = generic[2].replace(";","")
         self.verbose()
         self.generate_tb()
         print("\n")
@@ -42,9 +47,11 @@ class design:
         for line in vhdl_file :
             special=None
             if re.match("^\s*[^--]",line): #ignore comment
-                if re.match("[E|e][N|n][T|t][I|i][T|t][Y|y]", line):
+                #if re.match("[E|e][N|n][T|t][I|i][T|t][Y|y]", line):
+                if re.match("\s*[P|p][O|o][R|r][T|t]", line):
+                    print line
                     bool_declaration = 1
-                elif re.match("[A|a][R|r][C|c][H|h][I|i][T|t]", line):
+                elif re.match("\s*[A|a][R|r][C|c][H|h][I|i][T|t]", line):
                     bool_declaration = 0
                 if bool_declaration == 1 :
                     signal = re.match("\s*(\w+)\s*:\s*(\w+)\s*(\w+(.*))\s*",line)
@@ -56,6 +63,24 @@ class design:
                         f_signals.append([signal.group(1),signal.group(2),signal.group(3),special])
         vhdl_file.close()
         return f_signals
+
+    def get_generics(self):
+        f_generics = []
+        vhdl_file = open(self.url,'r') # read only
+        bool_declaration = 0 # -> when '1', in the component declaration
+        for line in vhdl_file :
+            if re.match("^\s*[^--]",line): #ignore comment
+                if re.match("\s*[G|g][E|e][N|n][E|e][R|r][I|i][C|c]", line):
+                    print line
+                    bool_declaration = 1
+                elif re.match("\s*[P|p][O|o][R|r][T|t]", line):
+                    bool_declaration = 0
+                if bool_declaration == 1 :
+                    generic = re.match("\s*(\w+)\s*:\s*(\w+)\s*(\w+(.*))\s*",line)
+                    if generic != None :
+                        f_generics.append([generic.group(1),generic.group(2),generic.group(3)])
+        vhdl_file.close()
+        return f_generics
 
     def verbose(self):
         print("------------TESTBENCH-GENERATOR------------------------------")
@@ -76,32 +101,55 @@ class design:
         vhdl_tb.write("library IEEE;\n")
         vhdl_tb.write("use ieee.std_logic_1164.all;\n")
         vhdl_tb.write("use ieee.std_logic_arith.all;\n")
-        vhdl_tb.write("use ieee.std_unsigned.all;\n")
+        vhdl_tb.write("use ieee.std_logic_unsigned.all;\n")
         #generate entity
         vhdl_tb.write("\n")
         vhdl_tb.write("entity "+self.entity_tb+" is\n")
         #generate port
-        vhdl_tb.write("\tPort(\n") #remind \t = tabulation
+        vhdl_tb.write("end "+self.entity_tb+";\n") #remind \t = tabulation
+        vhdl_tb.write("\n")
         #generate component
+        # architecture
+        vhdl_tb.write("architecture "+self.design_tb+" of "+self.entity_tb+" is\n")
+        vhdl_tb.write("\n")
+        #component
+        vhdl_tb.write("component "+self.entity+"\n")
+        #component generic
+        if( self.generics != []) :
+            vhdl_tb.write("Generic (\n")
+            i=0
+            for generic in self.generics :
+                vhdl_tb.write("\t\t"+generic[0]+" : "+generic[1]+" "+generic[2]+"")
+                if i ==len(self.generics)-1:
+                    vhdl_tb.write("\n")
+                else :
+                    vhdl_tb.write(";\n")
+                i=i+1
+            vhdl_tb.write("\t);")
+            vhdl_tb.write("\n")
+        #component signal
+        vhdl_tb.write("Port(\n")
         i=0
         for signal in self.signals :
             vhdl_tb.write("\t\t"+signal[0]+" : "+signal[1]+" "+signal[2]+"")
             if i ==len(self.signals)-1:
                 vhdl_tb.write("\n")
             else :
-                vhdl_tb.write(",\n")
+                vhdl_tb.write(";\n")
             i=i+1
         vhdl_tb.write("\t);")
         vhdl_tb.write("\n")
-        vhdl_tb.write("end "+self.entity_tb+";\n")
+        vhdl_tb.write("end component;\n")
         vhdl_tb.write("\n")
-        # architecture
-        vhdl_tb.write("architecture "+self.entity_tb+" is\n")
-        vhdl_tb.write("\n")
+
         #intern signal generation
         vhdl_tb.write("--Internal signals\n")
         for signal in self.signals :
-            vhdl_tb.write("\t"+"signal "+"s_"+signal[0]+" : "+signal[2]+";\n")
+            vhdl_tb.write("signal "+"s_"+signal[0]+" : "+signal[2]+";\n")
+        vhdl_tb.write("\n")
+        for generic in self.generics :
+            vhdl_tb.write("signal "+"s_"+generic[0]+" : "+generic[1]+" "+generic[2]+";\n")
+        vhdl_tb.write("\n")
 
         #constant for clock
         for signal in self.signals :
@@ -111,13 +159,27 @@ class design:
                 freq = input("What is its frequency (MHz) ?\n")
                 period = 1000/freq # calcul de la period en ns
                 print(signal[0]+" period is: "+str(period)+" ns")
-                vhdl_tb.write("\t"+"constant "+signal[0]+"_period"+" : "+"time := "+ str(period)+" ns"+";\n")
+                vhdl_tb.write("constant "+signal[0]+"_period"+" : "+"time := "+ str(period)+" ns"+";\n")
 
         vhdl_tb.write("\n")
         vhdl_tb.write("begin\n")
         vhdl_tb.write("\n")
         #instanciation
         vhdl_tb.write("uut :"+self.entity+"\n")
+
+        if( self.generics != []) :
+            vhdl_tb.write("Generic map(\n")
+            i=0
+            for generic in self.generics :
+                vhdl_tb.write("\t\t"+generic[0]+" => "+"s_"+generic[0])
+                if i ==len(self.generics)-1:
+                    vhdl_tb.write("\n")
+                else :
+                    vhdl_tb.write(",\n")
+                    print i
+                i=i+1
+            vhdl_tb.write("\t)") # langage alacon
+            vhdl_tb.write("\n")
         vhdl_tb.write("\tPort map(\n")
         i=0
         for signal in self.signals :
@@ -130,20 +192,7 @@ class design:
         vhdl_tb.write("\t);\n")
         vhdl_tb.write("\n")
 
-        vhdl_tb.write("--Clock process definiton\n")
-        #write clock process
-        for signal in self.signals :
-            if (signal[3]=="clk"):
-                vhdl_tb.write(signal[0]+"_process : process\n")
-                vhdl_tb.write("\tbegin\n")
-                vhdl_tb.write("\t\t"+"s_"+signal[0]+" <= '0';\n")
-                vhdl_tb.write("\t\twait for "+signal[0]+"_period/2;\n")
-                vhdl_tb.write("\t\t"+"s_"+signal[0]+" <= '1';\n")
-                vhdl_tb.write("\t\twait for "+signal[0]+"_period/2;\n")
-                vhdl_tb.write("\tend process;\n")
-                #vhdl_tb.write(signal[0]+" <= "+"s_"+signal[0]+";\n")
-                vhdl_tb.write("\n")
-
+        #MAIN
         vhdl_tb.write("--Stimulus process\n")
         vhdl_tb.write("stimulus : process\n")
         vhdl_tb.write("\tbegin\n")
@@ -159,9 +208,24 @@ class design:
         vhdl_tb.write("\t\t--Code here\n")
 
         vhdl_tb.write("\t\twait;\n")
-        vhdl_tb.write("\tend process;\n")
-        vhdl_tb.write("end;\n")
+        vhdl_tb.write("\tend process;\n\n")
 
+        vhdl_tb.write("--Clock process definiton\n")
+        #write clock process
+        for signal in self.signals :
+            if (signal[3]=="clk"):
+                vhdl_tb.write(signal[0]+"_process : process\n")
+                vhdl_tb.write("\tbegin\n")
+                vhdl_tb.write("\t\t"+"s_"+signal[0]+" <= '0';\n")
+                vhdl_tb.write("\t\twait for "+signal[0]+"_period/2;\n")
+                vhdl_tb.write("\t\t"+"s_"+signal[0]+" <= '1';\n")
+                vhdl_tb.write("\t\twait for "+signal[0]+"_period/2;\n")
+                vhdl_tb.write("\tend process;\n")
+                #vhdl_tb.write(signal[0]+" <= "+"s_"+signal[0]+";\n")
+                vhdl_tb.write("\n")
+
+
+        vhdl_tb.write("end;\n")#END OF THE TB
         vhdl_tb.close()
 #main
 current_design = design()
