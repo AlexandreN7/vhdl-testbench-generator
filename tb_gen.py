@@ -47,14 +47,13 @@ class design:
         for line in vhdl_file :
             special=None
             if re.match("^\s*[^--]",line): #ignore comment
-                #if re.match("[E|e][N|n][T|t][I|i][T|t][Y|y]", line):
                 if re.match("\s*[P|p][O|o][R|r][T|t]", line):
                     print line
                     bool_declaration = 1
-                elif re.match("\s*[A|a][R|r][C|c][H|h][I|i][T|t]", line):
-                    bool_declaration = 0
+                elif re.match("\s*[A|a][R|r][C|c][H|h][I|i][T|t][E|e][C|c][T|t][U|u][R|r][E|e]", line):# if architecture reached -> break
+                    break
                 if bool_declaration == 1 :
-                    signal = re.match("\s*(\w+)\s*:\s*(\w+)\s*(\w+(.*))\s*",line)
+                    signal = re.match("\s*(\w+)\s*:\s*(\w+)\s*(\w+(.*;))\s*",line)
                     if signal != None :
                         if re.match("\s*\w*[C|c][L|l][O|o]?[C|c]?[K|k]\w*\s*",signal.group(1)) : # CLOCK DETECTION
                             special = "clk"
@@ -75,8 +74,10 @@ class design:
                     bool_declaration = 1
                 elif re.match("\s*[P|p][O|o][R|r][T|t]", line):
                     bool_declaration = 0
+                elif re.match("\s*[A|a][R|r][C|c][H|h][I|i][T|t][E|e][C|c][T|t][U|u][R|r][E|e]", line):# if architecture reached -> break
+                    break
                 if bool_declaration == 1 :
-                    generic = re.match("\s*(\w+)\s*:\s*(\w+)\s*(\w+(.*))\s*",line)
+                    generic = re.match("\s*(\w+)\s*:\s*(\w+)\s*(\w+(.*;))\s*",line)
                     if generic != None :
                         f_generics.append([generic.group(1),generic.group(2),generic.group(3)])
         vhdl_file.close()
@@ -87,8 +88,6 @@ class design:
         print("----Proux Alexandre--2016------------------------------------")
         print("File name   : "+self.url)
         print("Entity name : "+self.entity)
-        #for a in self.signals :
-        #    print("Signal : "+a[0]+", "+a[1]+", "+a[2])
 
     def generate_tb(self):
         #self.url_tb = self.url.replace(".vhd","_tb.vhd",1)#edite le nom du fichier
@@ -192,7 +191,7 @@ class design:
         vhdl_tb.write("\t);\n")
         vhdl_tb.write("\n")
 
-        #MAIN
+        #MAIN PROCESS###################################################
         vhdl_tb.write("--Stimulus process\n")
         vhdl_tb.write("stimulus : process\n")
         vhdl_tb.write("\tbegin\n")
@@ -200,10 +199,18 @@ class design:
 
         vhdl_tb.write("\t\twait for "+str(period*2)+" ns"+";\n")
         #reset driver
+        #input signal basic detection
+        for signal in self.signals:
+            if( re.match("\s*[I|i][N|n]",signal[1])):
+                if(re.match("\w*[V|v][E|e][C|c][T|t][O|o][R|r]",signal[2])) :
+                    vhdl_tb.write("\t\t"+"s_"+signal[0]+" <= (others => '0');\n")
+                else :
+                    vhdl_tb.write("\t\t"+"s_"+signal[0]+" <= '0';\n")
+
+        vhdl_tb.write("\t\twait for "+str(period*2)+" ns"+";\n")
+
         for signal in self.signals:
             if(signal[3]=="rst"):
-                vhdl_tb.write("\t\t"+"s_"+signal[0]+" <= '0';\n")
-                vhdl_tb.write("\t\twait for "+str(period*2)+" ns"+";\n")
                 vhdl_tb.write("\t\t"+"s_"+signal[0]+" <= '1';\n")
         vhdl_tb.write("\t\t--Code here\n")
 
@@ -211,7 +218,7 @@ class design:
         vhdl_tb.write("\tend process;\n\n")
 
         vhdl_tb.write("--Clock process definiton\n")
-        #write clock process
+        #write clock process###########################################
         for signal in self.signals :
             if (signal[3]=="clk"):
                 vhdl_tb.write(signal[0]+"_process : process\n")
